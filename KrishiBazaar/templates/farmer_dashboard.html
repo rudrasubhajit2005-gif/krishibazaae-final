@@ -1,0 +1,355 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
+        <div>
+            <h1 class="mb-0">{{ translate('Farmer Dashboard') }} 👨‍🌾</h1>
+            <small class="text-muted fw-bold" id="live-clock"></small>
+        </div>
+        <span class="badge bg-success fs-5 p-2">{{ translate('Total Sales') }}: {{ sales }}</span>
+    </div>
+
+    <script>
+        function updateClock() {
+            const now = new Date();
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+            document.getElementById('live-clock').innerText = now.toLocaleDateString('en-US', options);
+        }
+        setInterval(updateClock, 1000);
+        updateClock(); 
+    </script>
+
+    <div class="row">
+        <div class="col-md-5">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">➕ {{ translate('List New Produce') }}</h5>
+                </div>
+                <div class="card-body">
+                    <form action="/add_product" method="POST" enctype="multipart/form-data">
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-dark">{{ translate('Category') }}</label>
+                            <select name="category" id="categorySelect" class="form-select border-success" onchange="updateProductList()" required>
+                                <option value="" disabled selected>{{ translate('Select Category...') }}</option>
+                                <option value="Vegetable">{{ translate('Vegetable') }}</option>
+                                <option value="Fruit">{{ translate('Fruit') }}</option>
+                                <option value="Grain">{{ translate('Grain') }}</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label fw-bold text-dark">{{ translate('Product Name') }}</label>
+                            <select name="name" id="nameSelect" class="form-select" onchange="checkCustomProduct(); fetchForecast();" required>
+                                <option value="" disabled selected>{{ translate('Select Category First') }}</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3 animate__animated animate__fadeIn" id="customNameDiv" style="display: none;">
+                            <input type="text" id="customNameInput" class="form-control" placeholder="{{ translate('Enter custom product name') }}">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">{{ translate('Product Image') }}</label>
+                            <input type="file" name="image" class="form-control" accept="image/*">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-success">{{ translate('Farm Location') }}</label>
+                            <div class="input-group">
+                                <input type="text" name="location" id="location-input" class="form-control" placeholder="{{ translate('Village, City, or State') }}" required>
+                                <button type="button" class="btn btn-outline-primary fw-bold" id="gps-btn" onclick="getLocation()">
+                                    📍 {{ translate('Get Location') }}
+                                </button>
+                            </div>
+                            <small id="location-status" class="form-text text-muted">{{ translate('Tap to auto-fill your current address.') }}</small>
+                        </div>
+                        
+                        <div id="ai-forecast-box" class="alert alert-info py-3 mb-3 border-info animate__animated animate__fadeIn" style="display: none; background-color: #e8f4f8;">
+                            </div>
+
+                        <div class="row mb-3">
+                            <div class="col">
+                                <label class="form-label fw-bold">{{ translate('Price (₹/kg)') }}</label>
+                                <input type="number" name="price" id="priceInput" step="0.01" class="form-control border-success" required>
+                            </div>
+                            <div class="col">
+                                <label class="form-label fw-bold">{{ translate('Quantity (kg)') }}</label>
+                                <input type="number" name="quantity" class="form-control border-success" required>
+                            </div>
+                        </div>
+
+                        <div class="mb-4 p-3 border rounded bg-light">
+                            <label class="form-label fw-bold text-dark">{{ translate('Accepted Payment Methods') }}</label>
+                            
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="cod" id="cod" checked>
+                                <label class="form-check-label" for="cod">💵 {{ translate('Cash on Delivery (COD)') }}</label>
+                            </div>
+                            
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" name="upi" id="upi" onchange="document.getElementById('qr-upload-section').style.display = this.checked ? 'block' : 'none';">
+                                <label class="form-check-label" for="upi">📱 {{ translate('UPI (Google Pay, PhonePe, Paytm)') }}</label>
+                            </div>
+
+                            <div class="mt-3 animate__animated animate__fadeIn" id="qr-upload-section" style="display: none;">
+                                <label class="form-label fw-bold text-primary small">{{ translate('Upload your UPI QR Code') }}</label>
+                                <input type="file" name="upi_qr" class="form-control form-control-sm" accept="image/*">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-success btn-lg w-100 fw-bold">{{ translate('Add to Market') }}</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-7">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">🔔 {{ translate('Incoming Orders') }}</h5>
+                </div>
+                <div class="card-body p-0">
+                    {% if orders %}
+                        <ul class="list-group list-group-flush">
+                        {% for order in orders %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{{ order.quantity }}kg of {{ translate(order.product.name) }}</strong> 
+                                    <br><small class="text-muted">{{ translate('Buyer') }}: {{ order.consumer.username }} | {{ order.date.strftime('%Y-%m-%d') }}</small>
+                                </div>
+                                <div class="text-end">
+                                    {% if order.status == 'Pending' %}
+                                        <a href="/manage_order/{{ order.id }}/accept" class="btn btn-sm btn-success">✔ {{ translate('Accept') }}</a>
+                                        <a href="/manage_order/{{ order.id }}/reject" class="btn btn-sm btn-danger">✖ {{ translate('Reject') }}</a>
+                                    {% else %}
+                                        <span class="badge bg-secondary mb-1">{{ translate(order.status) }}</span>
+                                        {% if order.payment_method == 'UPI' %}
+                                            <span class="badge bg-info text-dark d-block">💳 {{ translate('Paid via UPI') }}</span>
+                                        {% else %}
+                                            <span class="badge bg-light text-dark border d-block">💵 {{ translate('Cash on Delivery') }}</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
+                            </li>
+                        {% endfor %}
+                        </ul>
+                    {% else %}
+                        <div class="p-3 text-center text-muted">{{ translate('No pending orders.') }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0">📦 {{ translate('My Inventory') }}</h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table align-middle table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>{{ translate('Image') }}</th>
+                                <th>{{ translate('Item') }}</th>
+                                <th>{{ translate('Price') }}</th>
+                                <th>{{ translate('Stock') }}</th>
+                                <th>{{ translate('Action') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in products %}
+                            <tr>
+                                <td><img src="{{ url_for('static', filename='product_images/' + p.image) }}" width="45" height="45" class="rounded object-fit-cover shadow-sm"></td>
+                                <td>
+                                    <strong>{{ translate(p.name) }}</strong>
+                                    <br><small class="text-muted">{{ p.location }}</small>
+                                </td>
+                                <td class="text-success fw-bold">₹{{ p.price }}</td>
+                                <td>{{ p.quantity }} kg</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary fw-bold" data-bs-toggle="modal" data-bs-target="#editModal{{ p.id }}">
+                                        ✏️ {{ translate('Edit') }}
+                                    </button>
+                                </td>
+                            </tr>
+
+                            <div class="modal fade" id="editModal{{ p.id }}" tabindex="-1">
+                                <div class="modal-dialog modal-dialog-centered">
+                                    <div class="modal-content border-0 shadow">
+                                        <form action="/update_product/{{ p.id }}" method="POST">
+                                            <div class="modal-header bg-success text-white">
+                                                <h5 class="modal-title fw-bold">✏️ {{ translate('Edit') }} {{ translate(p.name) }}</h5>
+                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body p-4">
+                                                <div class="mb-3">
+                                                    <label class="form-label fw-bold text-dark">{{ translate('Update Price (₹/kg)') }}</label>
+                                                    <input type="number" name="price" step="0.01" class="form-control form-control-lg border-success" value="{{ p.price }}" required>
+                                                </div>
+                                                <div class="mb-2">
+                                                    <label class="form-label fw-bold text-dark">{{ translate('Update Stock Quantity (kg)') }}</label>
+                                                    <input type="number" name="quantity" class="form-control form-control-lg border-success" value="{{ p.quantity }}" required>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer bg-light">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ translate('Cancel') }}</button>
+                                                <button type="submit" class="btn btn-success fw-bold">{{ translate('Save Changes') }}</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center text-muted py-4">{{ translate('No products listed.') }}</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const productsByCategory = {
+        "Vegetable": ["Potato", "Tomato", "Onion", "Cabbage", "Cauliflower", "Carrot", "Spinach", "Brinjal", "Capsicum", "Pumpkin", "Garlic", "Ginger"],
+        "Fruit": ["Apple", "Banana", "Mango", "Orange", "Grapes", "Papaya", "Guava", "Watermelon", "Pomegranate", "Pineapple"],
+        "Grain": ["Rice", "Wheat", "Maize", "Barley", "Millet", "Lentils", "Chickpeas", "Mustard Seeds", "Soybeans"]
+    };
+
+    function updateProductList() {
+        const categorySelect = document.getElementById("categorySelect");
+        const nameSelect = document.getElementById("nameSelect");
+        const selectedCategory = categorySelect.value;
+
+        nameSelect.innerHTML = '<option value="" disabled selected>{{ translate("Select Product...") }}</option>';
+        if (selectedCategory && productsByCategory[selectedCategory]) {
+            productsByCategory[selectedCategory].forEach(product => {
+                let option = document.createElement("option");
+                option.value = product;
+                option.text = product;
+                nameSelect.appendChild(option);
+            });
+            let otherOption = document.createElement("option");
+            otherOption.value = "Other";
+            otherOption.text = "{{ translate('Other (Please specify)') }}";
+            nameSelect.appendChild(otherOption);
+        }
+        checkCustomProduct();
+        document.getElementById("ai-forecast-box").style.display = "none";
+    }
+
+    function checkCustomProduct() {
+        const nameSelect = document.getElementById("nameSelect");
+        const customDiv = document.getElementById("customNameDiv");
+        const customInput = document.getElementById("customNameInput");
+        
+        if (nameSelect.value === "Other") {
+            customDiv.style.display = "block";
+            nameSelect.removeAttribute("name"); 
+            customInput.setAttribute("name", "name"); 
+            customInput.required = true;
+        } else {
+            customDiv.style.display = "none";
+            nameSelect.setAttribute("name", "name");
+            customInput.removeAttribute("name");
+            customInput.required = false;
+        }
+    }
+
+    async function fetchForecast() {
+        const nameSelect = document.getElementById("nameSelect");
+        const product = nameSelect.value;
+        const forecastBox = document.getElementById("ai-forecast-box");
+        
+        if (!product || product === "Other") {
+            forecastBox.style.display = "none";
+            return;
+        }
+        
+        forecastBox.style.display = "block";
+        forecastBox.innerHTML = `
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                <strong>{{ translate('AI is calculating optimal price...') }}</strong>
+            </div>`;
+        
+        try {
+            const response = await fetch(`/api/forecast?product=${product}`);
+            const data = await response.json();
+            
+            if (data.error) {
+                forecastBox.innerHTML = "⚠️ {{ translate('Not enough historical data to generate an AI prediction for this crop.') }}";
+            } else {
+                forecastBox.innerHTML = `
+                    <div class="mb-1"><strong>🔮 {{ translate('AI Market Insights for Today') }}:</strong></div>
+                    <div class="row text-center mt-2">
+                        <div class="col-6 border-end border-info">
+                            <span class="d-block text-muted small">{{ translate('Expected Demand') }}</span>
+                            <span class="fs-5 text-primary fw-bold">${data.predicted_qty} kg</span>
+                        </div>
+                        <div class="col-6">
+                            <span class="d-block text-muted small">{{ translate('Suggested Price') }}</span>
+                            <span class="fs-5 text-success fw-bold">₹${data.predicted_price} / kg</span>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('priceInput').value = data.predicted_price;
+            }
+        } catch (error) {
+            forecastBox.innerHTML = "⚠️ {{ translate('Failed to load AI prediction.') }}";
+        }
+    }
+
+    function getLocation() {
+        const statusText = document.getElementById("location-status");
+        const locationInput = document.getElementById("location-input");
+        const gpsBtn = document.getElementById("gps-btn");
+
+        if (!navigator.geolocation) {
+            statusText.innerHTML = "❌ {{ translate('Geolocation is not supported by your browser.') }}";
+            return;
+        }
+
+        statusText.innerHTML = "⏳ {{ translate('Locating your farm...') }}";
+        statusText.classList.remove("text-danger", "text-success");
+        statusText.classList.add("text-primary");
+        gpsBtn.disabled = true;
+
+        navigator.geolocation.getCurrentPosition(async (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+                const data = await response.json();
+
+                let city = data.address.city || data.address.town || data.address.village || data.address.county || "";
+                let state = data.address.state || "";
+                
+                let finalAddress = "";
+                if (city && state) {
+                    finalAddress = `${city}, ${state}`;
+                } else {
+                    finalAddress = data.display_name; 
+                }
+
+                locationInput.value = finalAddress;
+                statusText.innerHTML = "✅ {{ translate('Location found successfully!') }}";
+                statusText.classList.remove("text-primary");
+                statusText.classList.add("text-success", "fw-bold");
+                
+            } catch (error) {
+                locationInput.value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+                statusText.innerHTML = "⚠️ {{ translate('Could not fetch city name, using GPS coordinates instead.') }}";
+            }
+            gpsBtn.disabled = false;
+
+        }, (error) => {
+            statusText.innerHTML = "❌ {{ translate('Permission denied or location unavailable. Please type manually.') }}";
+            statusText.classList.remove("text-primary");
+            statusText.classList.add("text-danger");
+            gpsBtn.disabled = false;
+        });
+    }
+</script>
+{% endblock %}

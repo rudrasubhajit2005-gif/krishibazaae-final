@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="row mb-4 align-items-center border-bottom pb-3">
+    <div class="col-md-6">
+        <h1 class="mb-0">{{ translate('Consumer Market') }} 🛒</h1>
+        <small class="text-muted fw-bold" id="live-clock"></small>
+    </div>
+    <div class="col-md-6 mt-3 mt-md-0">
+        <form action="/dashboard" method="GET" class="d-flex shadow-sm">
+            <input type="text" name="q" class="form-control me-2" placeholder="{{ translate('Search by item or location') }}" value="{{ search_query }}">
+            <button type="submit" class="btn btn-success px-4">{{ translate('Search') }}</button>
+            {% if search_query %}
+                <a href="/dashboard" class="btn btn-outline-secondary ms-2">{{ translate('Clear') }}</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<script>
+    function updateClock() {
+        const now = new Date();
+        const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+        document.getElementById('live-clock').innerText = now.toLocaleDateString('en-US', options);
+    }
+    setInterval(updateClock, 1000);
+    updateClock(); 
+</script>
+
+<div class="row">
+    <div class="col-md-9">
+        <h3 class="fw-bold mb-3">{{ translate('Available Fresh Produce') }}</h3>
+        <div class="row">
+            {% for p in products %}
+                {% if p.quantity > 0 %}
+                <div class="col-md-4 mb-4">
+                    <div class="card shadow-sm h-100 border-0">
+                        <div style="height: 180px; overflow: hidden; background: #f8f9fa;">
+                            <img src="{{ url_for('static', filename='product_images/' + p.image) }}" class="w-100 h-100 object-fit-cover" alt="{{ p.name }}">
+                        </div>
+                        
+                        <div class="card-body d-flex flex-column">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h5 class="card-title fw-bold text-success mb-0">{{ translate(p.name) }}</h5>
+                                <span class="badge bg-light text-dark border">{{ translate(p.category) }}</span>
+                            </div>
+                            
+                            <p class="mb-1 small text-muted"><span class="text-danger">📍</span> {{ translate('Location') }}: {{ p.location }}</p>
+                            <p class="mb-1 small text-muted"><span class="text-primary">📦</span> {{ translate('Available Stock') }}: <strong class="text-dark">{{ p.quantity }} kg</strong></p>
+                            <p class="mb-3 small text-primary fw-bold">
+                                <span class="text-primary">📞</span> {{ translate('Call Farmer') }}: {{ p.farmer.phone }}
+                            </p>
+
+                            <div class="mt-auto border-top pt-3">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <span class="text-dark fw-bold fs-5">₹{{ p.price }}/kg</span>
+                                </div>
+                                <form action="/buy/{{ p.id }}" method="POST" class="d-flex gap-2">
+                                    <input type="number" name="order_quantity" class="form-control" value="1" min="1" max="{{ p.quantity }}" style="width: 80px;" title="{{ translate('Max order limit is') }} {{ p.quantity }} kg">
+                                    <button type="submit" class="btn btn-success w-100">{{ translate('Buy Now') }}</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            {% else %}
+                <div class="col-12 text-center text-muted py-5">
+                    <h4>{{ translate('No produce found.') }}</h4>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">{{ translate('My Orders') }}</h5>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for order in orders %}
+                    <li class="list-group-item">
+                        <strong>{{ order.quantity }}kg of {{ translate(order.product.name) }}</strong>
+                        <br><small class="text-muted">{{ order.date.strftime('%Y-%m-%d') }}</small>
+                        
+                        <span class="badge 
+                            {% if order.status == 'Accepted' %}bg-success
+                            {% elif order.status == 'Rejected' %}bg-danger
+                            {% else %}bg-secondary{% endif %} float-end mt-1">
+                            {{ translate(order.status) }}
+                        </span>
+
+                        <div class="mt-2 border-top pt-2">
+                            {% if order.payment_method == 'UPI' %}
+                                <span class="badge bg-info text-dark w-100 py-2">✅ {{ translate('Paid via UPI') }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark border w-100 mb-2">💵 {{ translate('Payment: Cash on Delivery') }}</span>
+                                
+                                {% if order.status == 'Accepted' and order.product.accepts_upi %}
+                                    <button class="btn btn-sm btn-outline-primary w-100 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#upiModal{{ order.id }}">
+                                        📱 {{ translate('Pay via UPI Instead') }}
+                                    </button>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </li>
+
+                    {% if order.status == 'Accepted' and order.product.accepts_upi and order.payment_method != 'UPI' %}
+                    <div class="modal fade" id="upiModal{{ order.id }}" tabindex="-1">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <div class="modal-content border-0 shadow">
+                                <form action="/pay_via_upi/{{ order.id }}" method="POST">
+                                    <div class="modal-header bg-primary text-white">
+                                        <h5 class="modal-title fw-bold">📱 {{ translate('Pay via UPI') }}</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body text-center">
+                                        <h4 class="fw-bold text-success mb-3">
+                                            {{ translate('Total Amount') }}: ₹{{ order.quantity * order.product.price }}
+                                        </h4>
+                                        <p class="text-muted small mb-2">{{ translate('Scan this QR Code to pay the farmer directly.') }}</p>
+                                        
+                                        {% if order.product.upi_qr %}
+                                            <img src="{{ url_for('static', filename='product_images/' + order.product.upi_qr) }}" class="img-fluid border rounded shadow p-2 mb-3" style="max-width: 200px;">
+                                        {% else %}
+                                            <p class="text-danger fw-bold">⚠️ {{ translate('Farmer forgot to upload QR.') }}</p>
+                                        {% endif %}
+                                        
+                                        <p class="small text-danger"><em>{{ translate('Only click confirm after you have successfully scanned and paid.') }}</em></p>
+                                    </div>
+                                    <div class="modal-footer bg-light">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ translate('Cancel') }}</button>
+                                        <button type="submit" class="btn btn-success fw-bold">{{ translate('Confirm UPI Payment') }}</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

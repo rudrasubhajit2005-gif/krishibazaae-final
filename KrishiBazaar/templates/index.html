@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<div class="p-5 text-center bg-success text-white rounded shadow-sm mb-5">
+    <h1 class="display-4 fw-bold">{{ translate('Welcome to KrishiBazaar') }} 🌱</h1>
+    <p class="lead">{{ translate('Connecting local farmers directly with consumers for fresh, fair-priced produce.') }}</p>
+    {% if not current_user.is_authenticated %}
+        <a href="/register" class="btn btn-light btn-lg mt-3 fw-bold text-success">{{ translate('Join the Market') }}</a>
+    {% endif %}
+</div>
+
+<div class="container mb-5" id="demand-forecast">
+    <div class="card shadow-lg border-0 bg-white rounded-3 p-4">
+        <div class="text-center mb-4">
+            <h2 class="fw-bold text-dark">🔮 {{ translate('AI Market Demand Forecaster') }}</h2>
+            <p class="text-muted">{{ translate('Powered by Facebook Prophet ML. Select a future date to see the projected market demand distribution for all crops.') }}</p>
+        </div>
+
+        <form action="/#demand-forecast" method="POST" class="row g-3 justify-content-center" onsubmit="document.getElementById('loading').style.display='block';">
+            <div class="col-md-5">
+                <label class="form-label fw-bold">{{ translate('Select Target Date') }}</label>
+                <input type="date" name="target_date" class="form-control form-control-lg" required>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">{{ translate('Generate Forecast') }}</button>
+            </div>
+        </form>
+
+        <div id="loading" class="text-center mt-4" style="display: none;">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted fw-bold">{{ translate('AI is analyzing historical trends... please wait.') }}</p>
+        </div>
+
+        {% if forecast_result %}
+            <div class="mt-5 p-4 rounded bg-light border-start border-5 border-primary animate__animated animate__fadeIn">
+                {% if forecast_result.error %}
+                    <h4 class="text-danger mb-0">⚠️ {{ translate(forecast_result.error) }}</h4>
+                {% else %}
+                    <h3 class="fw-bold text-center mb-1">{{ translate('Projected Market Demand') }}</h3>
+                    <p class="text-center text-muted mb-4"><strong>📅 {{ forecast_result.date }}</strong></p>
+                    
+                    <div class="row align-items-center">
+                        <div class="col-md-6 mb-4 mb-md-0 d-flex justify-content-center">
+                            <div style="width: 100%; max-width: 350px;">
+                                <canvas id="demandPieChart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <table class="table table-hover bg-white shadow-sm rounded">
+                                <thead class="table-primary">
+                                    <tr>
+                                        <th>{{ translate('Produce') }}</th>
+                                        <th>{{ translate('Predicted Demand') }}</th>
+                                        <th>{{ translate('Expected Price') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in forecast_result.predictions %}
+                                    <tr>
+                                        <td class="fw-bold">{{ translate(item.product) }}</td>
+                                        <td class="text-primary fw-bold">{{ item.predicted_qty }} kg</td>
+                                        <td class="text-success fw-bold">₹{{ item.predicted_price }}/kg</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <script>
+                        const forecastData = {{ forecast_result.predictions | tojson }};
+                        const labels = forecastData.map(item => item.product);
+                        const dataValues = forecastData.map(item => item.predicted_qty);
+                        
+                        const backgroundColors = [
+                            'rgba(255, 99, 132, 0.8)',  
+                            'rgba(54, 162, 235, 0.8)',  
+                            'rgba(255, 206, 86, 0.8)',  
+                            'rgba(75, 192, 192, 0.8)',  
+                            'rgba(153, 102, 255, 0.8)',
+                            'rgba(255, 159, 64, 0.8)'
+                        ];
+
+                        const ctx = document.getElementById('demandPieChart').getContext('2d');
+                        new Chart(ctx, {
+                            type: 'pie',
+                            data: {
+                                labels: labels,
+                                datasets: [{
+                                    label: 'Predicted Demand (kg)',
+                                    data: dataValues,
+                                    backgroundColor: backgroundColors,
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: {
+                                    legend: { position: 'bottom' }
+                                }
+                            }
+                        });
+                    </script>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="container mt-5">
+    
+    <div class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <form action="/" method="GET" class="d-flex shadow-sm rounded">
+                <input type="text" name="q" class="form-control form-control-lg me-2 border-success border-2" placeholder="{{ translate('Search by crop, category, or location...') }}" value="{{ search_query }}">
+                <button type="submit" class="btn btn-success btn-lg px-5 fw-bold">{{ translate('Search') }}</button>
+                {% if search_query %}
+                    <a href="/" class="btn btn-outline-secondary btn-lg ms-2">{{ translate('Clear') }}</a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <h3 class="fw-bold mb-4 border-bottom pb-2 text-success">
+        {% if search_query %}
+            🔍 {{ translate('Search Results for') }} "{{ search_query }}"
+        {% else %}
+            🛒 {{ translate('Fresh Arrivals') }}
+        {% endif %}
+    </h3>
+
+    <div class="row">
+        {% for p in products %}
+        <div class="col-md-4 mb-4">
+            <div class="card shadow-sm h-100 border-0">
+                <img src="{{ url_for('static', filename='product_images/' + p.image) }}" class="card-img-top" style="height: 200px; object-fit: cover;" alt="{{ p.name }}">
+                <div class="card-body flex-column d-flex">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="card-title fw-bold text-success mb-0">{{ translate(p.name) }}</h5>
+                        <span class="badge bg-light text-dark border">{{ translate(p.category) }}</span>
+                    </div>
+                    
+                    <p class="mb-1 small text-muted"><span class="text-danger">📍</span> {{ translate('Location') }}: {{ p.location }}</p>
+                    <p class="mb-2 small text-muted"><span class="text-primary">📦</span> {{ translate('Available Stock') }}: <strong class="text-dark">{{ p.quantity }} kg</strong></p>
+                    
+                    <div class="d-flex justify-content-between align-items-center mt-auto pt-3 border-top">
+                        <span class="text-dark fw-bold fs-5">₹{{ p.price }}/kg</span>
+                        
+                        {% if current_user.is_authenticated %}
+                            <a href="/dashboard" class="btn btn-success">{{ translate('Buy Now') }}</a>
+                        {% else %}
+                            <a href="/login" class="btn btn-outline-success">{{ translate('Login to Buy') }}</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12 text-center text-muted py-5">
+            <h4>{{ translate('No products found. Please try a different search.') }}</h4>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
